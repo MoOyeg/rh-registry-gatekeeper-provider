@@ -16,13 +16,6 @@
 package main
 
 import (
-	"bufio"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
 )
@@ -36,61 +29,6 @@ func Lint() error {
 	}
 
 	return sh.RunV("git", "diff", "--exit-code")
-}
-
-func CheckLicenseHeaders() error {
-	var checkFailed bool
-
-	if err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		ext := filepath.Ext(path)
-		if ext == ".sh" || ext == ".go" {
-			fmt.Print("Checking ", path, " ")
-
-			f, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-
-			var hasCopyright bool
-			var hasLicense bool
-
-			scanner := bufio.NewScanner(f)
-			// only check first 20 lines
-			for i := 0; i < 20 && scanner.Scan(); i++ {
-				line := scanner.Text()
-				if !hasCopyright && strings.Contains(line, "Copyright The Sigstore Authors.") {
-					hasCopyright = true
-				}
-				if !hasLicense && strings.Contains(line, "http://www.apache.org/licenses/LICENSE-2.0") {
-					hasLicense = true
-				}
-			}
-
-			if !(hasCopyright && hasLicense) {
-				fmt.Println("❌")
-				checkFailed = true
-			} else {
-				fmt.Println("☑️")
-			}
-
-			return nil
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	if checkFailed {
-		return errors.New("file(s) without license header found")
-	}
-	return nil
 }
 
 func Test() error {
