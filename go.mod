@@ -3,6 +3,7 @@ module github.com/MoOyeg/rh-registry-gatekeeper-provider
 go 1.21.2
 
 require (
+	github.com/joho/godotenv v1.5.1
 	github.com/magefile/mage v1.15.0
 	github.com/open-policy-agent/frameworks/constraint v0.0.0-20230822235116-f0b62fe1e4c4
 )

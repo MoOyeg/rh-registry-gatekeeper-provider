@@ -1,0 +1,85 @@
+{
+    "_id": "5ef60ab719a8e3c7a99aacf7",
+    "_links": {
+            "certification_project": {
+                    "href": "/v1/repositories/registry/registry.access.redhat.com/repository/jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7/projects/certification"
+            },
+            "images": {
+                    "href": "/v1/repositories/registry/registry.access.redhat.com/repository/jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7/images"
+            },
+            "operator_bundles": {
+                    "href": "/v1/repositories/registry/registry.access.redhat.com/repository/jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7/operators/bundles"
+            },
+            "product_listings": {
+                    "href": "/v1/repositories/registry/registry.access.redhat.com/repository/jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7/product-listings"
+            },
+            "vendor": {
+                    "href": "/v1/vendors/label/redhat"
+            }
+    },
+    "application_categories": [
+            "Application Server",
+            "Middleware",
+            "Programming Languages \u0026 Runtimes"
+    ],
+    "auto_rebuild_tags": [
+            "latest"
+    ],
+    "build_categories": [
+            "Builder image"
+    ],
+    "can_auto_release_cve_rebuild": false,
+    "content_stream_grades": [
+            {
+                    "grade": "F",
+                    "image_ids": [
+                            {
+                                    "arch": "amd64",
+                                    "id": "606f4c57bed8bd614cf076a9"
+                            }
+                    ],
+                    "tag": "latest"
+            }
+    ],
+    "content_stream_tags": [
+            "latest"
+    ],
+    "creation_date": "2020-06-26T14:48:23.879Z",
+    "description": "Red Hat JBoss Web Server 5.4 - Tomcat 9 OpenShift container image (OpenJDK8)",
+    "display_data": {
+            "long_description": "\u003cp\u003eRed Hat JBoss Web Server combines market-leading open source technologies (such as Apache Tomcat) with enterprise capabilities to provide a single solution for large-scale websites and lightweight web applications.\u003c/p\u003e\n\u003cp\u003eIMPORTANT NOTE: This image will be deprecated by the time JWS 5.5 is released, tentatively around the end of June 2021.\u003c/p\u003e\n",
+            "long_description_markdown": "Red Hat JBoss Web Server combines market-leading open source technologies (such as Apache Tomcat) with enterprise capabilities to provide a single solution for large-scale websites and lightweight web applications.\n\nIMPORTANT NOTE: This image will be deprecated by the time JWS 5.5 is released, tentatively around the end of June 2021.",
+            "name": "JBoss Web Server 5.4 (OpenJDK8)",
+            "openshift_tags": "builder, java, tomcat9",
+            "short_description": "Red Hat JBoss Web Server 5.4 - Tomcat 9 OpenShift container image (OpenJDK8)"
+    },
+    "documentation_links": [],
+    "eol_date": "2021-06-28T21:00:00Z",
+    "fbc_opt_in": false,
+    "freshness_grades_unknown_until_date": null,
+    "includes_multiple_content_streams": false,
+    "last_update_date": "2023-07-30T04:24:56.508Z",
+    "metadata_source": "quay",
+    "namespace": "jboss-webserver-5",
+    "non_production_only": false,
+    "object_type": "containerRepository",
+    "privileged_images_allowed": false,
+    "product_id": null,
+    "product_listings": [
+            "5ec5311578e79e6a879fa26b"
+    ],
+    "protected_for_pull": false,
+    "protected_for_search": false,
+    "published": true,
+    "registry": "registry.access.redhat.com",
+    "registry_target": "redhat-prod",
+    "release_categories": [
+            "Deprecated"
+    ],
+    "repository": "jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7",
+    "requires_terms": true,
+    "total_size_bytes": 899421119,
+    "total_uncompressed_size_bytes": 2264201041,
+    "use_latest": true,
+    "vendor_label": "redhat"
+}

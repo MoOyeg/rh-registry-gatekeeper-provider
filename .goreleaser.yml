@@ -1,4 +1,4 @@
-project_name: cosign-gatekeeper-provider
+project_name: -gatekeeper-provider
 
 env:
   - GO111MODULE=on
@@ -23,7 +23,7 @@ builds:
     flags:
       - -trimpath
     mod_timestamp: '{{ .CommitTimestamp }}'
-    binary: cosign-gatekeeper-provider-{{ .Os }}-{{ .Arch }}
+    binary: rh-registry-gatekeeper-provider-{{ .Os }}-{{ .Arch }}
     goos:
       - linux
       - darwin
@@ -39,7 +39,7 @@ builds:
       - CGO_ENABLED=0
 
 kos:
-  - repository: ghcr.io/sigstore/cosign-gatekeeper-provider
+  - repository: quay.io/mooyeg/rh-registry-gatekeeper-provider
     tags:
       - 'v{{.Version}}'
     main: .
@@ -85,6 +85,6 @@ release:
   draft: true # allow for manual edits
   github:
     owner: sigstore
-    name: cosign-gatekeeper-provider
+    name: rh-registry-gatekeeper-provider
   footer: |
     ### Thanks for all contributors!
