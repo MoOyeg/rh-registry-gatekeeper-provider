@@ -13,6 +13,9 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -25,8 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/joho/godotenv"
-
 	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 )
 
@@ -99,7 +102,8 @@ type RegistryAPIResponse struct {
 }
 
 const (
-	apiVersion                 = "externaldata.gatekeeper.sh/v1alpha1"
+	timeout                    = 1 * time.Second
+	apiVersion                 = "externaldata.gatekeeper.sh/v1beta1"
 	applicationName            = "rh-registry-gatekeeper-provider"
 	constRegistryURL           = "https://catalog.redhat.com/api/containers/v1/repositories/registry/registry.access.redhat.com/repository/jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7"
 	constRegistrymethod        = "GET"
@@ -109,11 +113,20 @@ const (
 	constHealthgradeValidCheck = "true"
 	constAllowedHealthGrades   = "A,B,C"
 	constServerPort            = ":8090"
+	constGatekeeperCACert      = "/gatekeeper-ca/ca.crt"
+	constSSLCertFolder         = "/provider-certs"
+	https_enabled              = "true"
 )
 
 var (
 	//Server Port
 	serverPort string
+
+	//Gatekeeper CA location
+	gatekeeperCACert string
+
+	//SSL Cert location
+	sslCertFolder string
 
 	//Registry API to call for RedHat Data - #REGISTRY_API_URL
 	registryAPIURL string
@@ -135,12 +148,15 @@ var (
 
 	//Allowed Image Health Grades
 	allowedHealthGrades []string
+
+	//Enable HTTPS. Default is true
+	httpsEnabled bool
 )
 
 func init() {
 	//Read env variables
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("No .env file found")
+		fmt.Println("No .env file found, Will use env variables")
 	}
 }
 
@@ -159,14 +175,16 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	//Read env variables
-	serverPort = getEnvSetDefault("SERVER_PORT", constServerPort)
-	registryAPIURL = getEnvSetDefault("REGISTRY_API_URL", constRegistryURL)
-	registryAPIMethod = getEnvSetDefault("REGISTRY_API_METHOD", constRegistrymethod)
-
 	//Set Local Variables
 	var err error
 	var shouldnoterror error
+
+	//Read env variables
+
+	httpsEnabled, err = strconv.ParseBool(getEnvSetDefault(("HTTPS_ENABLED"), https_enabled))
+	serverPort = getEnvSetDefault("SERVER_PORT", constServerPort)
+	registryAPIURL = getEnvSetDefault("REGISTRY_API_URL", constRegistryURL)
+	registryAPIMethod = getEnvSetDefault("REGISTRY_API_METHOD", constRegistrymethod)
 
 	eolDateValidCheck, err = strconv.ParseBool(getEnvSetDefault(("EOL_DATE_VALID_CHECK"), constEOLDateValidCheck))
 	if err != nil {
@@ -196,6 +214,10 @@ func main() {
 		healthgradeValidCheck, shouldnoterror = strconv.ParseBool(constHealthgradeValidCheck)
 	}
 
+	gatekeeperCACert = getEnvSetDefault(("GATEKEEPER_CA_CERT"), constGatekeeperCACert)
+
+	sslCertFolder = getEnvSetDefault(("SSL_CERT_FOLDER"), constSSLCertFolder)
+
 	allowedHealthGrades = strings.Split(getEnvSetDefault(("ALLOWED_HEALTH_GRADES"), constAllowedHealthGrades), ",")
 
 	if shouldnoterror != nil {
@@ -203,17 +225,49 @@ func main() {
 	}
 
 	logger.Info("starting server...")
-	http.HandleFunc("/validate", validate)
 
-	srv := &http.Server{
-		Addr:              serverPort,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	if httpsEnabled {
+		logger.Info("HTTPS Enabled")
+		// load Gatekeeper's CA certificate
+		caCert, err := os.ReadFile(gatekeeperCACert)
+		if err != nil {
+			panic(err)
+		}
 
-	if err := srv.ListenAndServe(); err != nil {
-		panic(err)
+		clientCAs := x509.NewCertPool()
+		clientCAs.AppendCertsFromPEM(caCert)
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/validate", processTimeout(validate, timeout))
+
+		server := &http.Server{
+			Addr:              serverPort,
+			Handler:           mux,
+			ReadHeaderTimeout: timeout,
+			TLSConfig: &tls.Config{
+				ClientAuth: tls.RequireAndVerifyClientCert,
+				ClientCAs:  clientCAs,
+				MinVersion: tls.VersionTLS13,
+			},
+		}
+
+		if err := server.ListenAndServeTLS(fmt.Sprintf("%s/tls.crt", sslCertFolder), fmt.Sprintf("%s/tls.key", sslCertFolder)); err != nil {
+			panic(err)
+		}
+
+	} else {
+		logger.Info("HTTPS Disabled")
+		http.HandleFunc("/validate", validate)
+		srv := &http.Server{
+			Addr:              serverPort,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      10 * time.Second,
+			ReadHeaderTimeout: timeout,
+		}
+
+		if err := srv.ListenAndServe(); err != nil {
+			panic(err)
+		}
 	}
 
 }
@@ -235,31 +289,39 @@ func validate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	fmt.Println("registryAPIURL: ", registryAPIURL)
-	fmt.Println("eolDateValidityCheck: ", eolDateValidCheck)
-	fmt.Println("eolDateValidityPeriod: ", eolDateValidityPeriod)
-	fmt.Println("deperecatedValidCheck: ", deprecatedValidCheck)
-	fmt.Println("healthgradeValidCheck: ", healthgradeValidCheck)
+	// read request body from Gatekeeper
+	gkprequestBody, err := io.ReadAll(req.Body)
+	if err != nil {
+		errorString := fmt.Sprintf("client: could not read request from gatekeeper: %v\n", err)
+		logger.Error(errorString)
+		sendResponse(nil, errorString, w)
+		return
+	}
 
-	// // read request body from Gatekeeper
-	// gkprequestBody, err := io.ReadAll(req.Body)
-	// if err != nil {
-	// 	errorString := fmt.Sprintf("client: could not read request from gatekeeper: %v\n", err)
-	// 	logger.Error(errorString)
-	// 	sendResponse(nil, errorString, w)
-	// 	return
-	// }
+	// parse request body from Gatekeeper
+	var providerRequest externaldata.ProviderRequest
+	err = json.Unmarshal(gkprequestBody, &providerRequest)
+	if err != nil {
+		errorString := fmt.Sprintf("client: could not unmarshal request body from gatekeeper: %v\n", err)
+		logger.Error(errorString)
+		sendResponse(nil, errorString, w)
+		return
+	}
 
-	// // parse request body from Gatekeeper
-	// var providerRequest externaldata.ProviderRequest
-	// err = json.Unmarshal(gkprequestBody, &providerRequest)
-	// if err != nil {
-	// 	errorString := fmt.Sprintf("client: could not unmarshal request body from gatekeeper: %v\n", err)
-	// 	logger.Error(errorString)
-	// 	sendResponse(nil, errorString, w)
-	// 	return
-	// }
+	// iterate over all keys
+	for _, key := range providerRequest.Request.Keys {
+		fmt.Println("verify signature for:", key)
+		ref, err := name.ParseReference(key)
+		if err != nil {
+			sendResponse(nil, fmt.Sprintf("ERROR (ParseReference(%q)): %v", key, err), w)
+			return
+		}
 
+		fmt.Println("ref:", ref)
+		fmt.Println(ref.Context().RepositoryStr())
+		fmt.Println(ref.Identifier())
+
+	}
 	// Create request to RH registry API
 	apirequest, err := http.NewRequest(registryAPIMethod, registryAPIURL, nil)
 	if err != nil {
@@ -380,5 +442,26 @@ func sendResponse(results *[]externaldata.Item, systemErr string, w http.Respons
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		panic(err)
+	}
+}
+
+func processTimeout(h http.HandlerFunc, duration time.Duration) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), duration)
+		defer cancel()
+
+		r = r.WithContext(ctx)
+
+		processDone := make(chan bool)
+		go func() {
+			h(w, r)
+			processDone <- true
+		}()
+
+		select {
+		case <-ctx.Done():
+			sendResponse(nil, "operation timed out", w)
+		case <-processDone:
+		}
 	}
 }

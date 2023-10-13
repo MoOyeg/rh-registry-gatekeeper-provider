@@ -1,0 +1,1 @@
+{"time":"2023-10-13T02:16:58.87489063Z","level":"INFO","msg":"{\"apiVersion\":\"externaldata.gatekeeper.sh/v1beta1\",\"kind\":\"ProviderRequest\",\"request\":{\"keys\":[\"error_test/image:latest\"]}}"}
