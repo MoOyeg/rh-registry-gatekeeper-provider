@@ -1,0 +1,8 @@
+apiVersion: externaldata.gatekeeper.sh/v1beta1
+kind: Provider
+metadata:
+  name: registry-gatekeeper-provider-mutate
+spec:
+  url: https://rh-registry-gatekeeper-provider.gatekeeper-system.svc.cluster.local:8090/mutatetagdigest
+  caBundle: ${SERVICE_CA_BUNDLE}
+  timeout: 30

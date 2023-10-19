@@ -17,95 +17,263 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/exp/slog"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/joho/godotenv"
 	"github.com/open-policy-agent/frameworks/constraint/pkg/externaldata"
 )
 
+type SkopeoResponse struct {
+	Name          string    `json:"Name,omitempty"`
+	Digest        string    `json:"Digest,omitempty"`
+	RepoTags      []string  `json:"RepoTags,omitempty"`
+	Created       time.Time `json:"Created,omitempty"`
+	DockerVersion string    `json:"DockerVersion,omitempty"`
+	Labels        struct {
+		Architecture              string `json:"architecture,omitempty"`
+		BuildDate                 string `json:"build-date,omitempty"`
+		ComRedhatComponent        string `json:"com.redhat.component,omitempty"`
+		ComRedhatLicenseTerms     string `json:"com.redhat.license_terms,omitempty"`
+		Description               string `json:"description,omitempty"`
+		DistributionScope         string `json:"distribution-scope,omitempty"`
+		IoBuildahVersion          string `json:"io.buildah.version,omitempty"`
+		IoK8SDescription          string `json:"io.k8s.description,omitempty"`
+		IoK8SDisplayName          string `json:"io.k8s.display-name,omitempty"`
+		IoOpenshiftExposeServices string `json:"io.openshift.expose-services,omitempty"`
+		IoOpenshiftTags           string `json:"io.openshift.tags,omitempty"`
+		Maintainer                string `json:"maintainer,omitempty"`
+		Name                      string `json:"name,omitempty"`
+		Release                   string `json:"release,omitempty"`
+		Summary                   string `json:"summary,omitempty"`
+		UpstreamRef               string `json:"upstream-ref,omitempty"`
+		UpstreamURL               string `json:"upstream-url,omitempty"`
+		URL                       string `json:"url,omitempty"`
+		VcsRef                    string `json:"vcs-ref,omitempty"`
+		VcsType                   string `json:"vcs-type,omitempty"`
+		Vendor                    string `json:"vendor,omitempty"`
+		Version                   string `json:"version,omitempty"`
+	} `json:"Labels,omitempty"`
+	Architecture string   `json:"Architecture,omitempty"`
+	Os           string   `json:"Os,omitempty"`
+	Layers       []string `json:"Layers,omitempty"`
+	Env          []string `json:"Env,omitempty"`
+}
+
+type ImageAPIResponse struct {
+	Data []struct {
+		ID    string `json:"_id"`
+		Links struct {
+			Artifacts struct {
+				Href string `json:"href"`
+			} `json:"artifacts"`
+			Requests struct {
+				Href string `json:"href"`
+			} `json:"requests"`
+			RpmManifest struct {
+				Href string `json:"href"`
+			} `json:"rpm_manifest"`
+			TestResults struct {
+				Href string `json:"href"`
+			} `json:"test_results"`
+			Vulnerabilities struct {
+				Href string `json:"href"`
+			} `json:"vulnerabilities"`
+		} `json:"_links"`
+		Architecture string `json:"architecture"`
+		Brew         struct {
+			Build          string    `json:"build"`
+			CompletionDate time.Time `json:"completion_date"`
+			Nvra           string    `json:"nvra"`
+			Package        string    `json:"package"`
+		} `json:"brew,omitempty"`
+		CloudService       bool      `json:"cloud_service,omitempty"`
+		Certified          bool      `json:"certified,omitempty"`
+		ContentSets        []string  `json:"content_sets"`
+		CpeIds             []string  `json:"cpe_ids"`
+		CpeIdsRHBaseImages []string  `json:"cpe_ids_rh_base_images,omitempty"`
+		CreationDate       time.Time `json:"creation_date"`
+		DockerImageID      string    `json:"docker_image_id"`
+		FreshnessGrades    []struct {
+			CreationDate time.Time `json:"creation_date,omitempty"`
+			EndDate      time.Time `json:"end_date,omitempty"`
+			Grade        string    `json:"grade"`
+			StartDate    time.Time `json:"start_date"`
+		} `json:"freshness_grades,omitempty"`
+		ImageID        string    `json:"image_id"`
+		LastUpdateDate time.Time `json:"last_update_date"`
+		ObjectType     string    `json:"object_type"`
+		ParsedData     struct {
+			Architecture  string    `json:"architecture,omitempty"`
+			Command       string    `json:"command,omitempty"`
+			Comment       string    `json:"comment,omitempty"`
+			Created       time.Time `json:"created,omitempty"`
+			DockerVersion string    `json:"docker_version,omitempty"`
+			Image_ID      string    `json:"image_id,omitempty"`
+			EnvVariables  []string  `json:"env_variables"`
+			Labels        []struct {
+				Name  string `json:"name,omitempty"`
+				Value string `json:"value,omitempty"`
+			} `json:"labels,omitempty"`
+			Layers                 []string `json:"layers"`
+			Os                     string   `json:"os"`
+			Size                   int      `json:"size"`
+			UncompressedLayerSizes []struct {
+				LayerID   string `json:"layer_id"`
+				SizeBytes int    `json:"size_bytes"`
+			} `json:"uncompressed_layer_sizes,omitempty"`
+			UncompressedSizeBytes int    `json:"uncompressed_size_bytes"`
+			User                  string `json:"user"`
+		} `json:"parsed_data,omitempty"`
+		RawConfig    string `json:"raw_config"`
+		Repositories []struct {
+			Links struct {
+				ImageAdvisory struct {
+					Href string `json:"href"`
+				} `json:"image_advisory"`
+				Repository struct {
+					Href string `json:"href"`
+				} `json:"repository"`
+			} `json:"_links"`
+			Comparison struct {
+				AdvisoryRpmMapping []struct {
+					AdvisoryIds []string `json:"advisory_ids"`
+					Nvra        string   `json:"nvra"`
+				} `json:"advisory_rpm_mapping"`
+				Reason     string `json:"reason"`
+				ReasonText string `json:"reason_text"`
+				Rpms       struct {
+					Downgrade []interface{} `json:"downgrade"`
+					New       []interface{} `json:"new"`
+					Remove    []interface{} `json:"remove"`
+					Upgrade   []string      `json:"upgrade"`
+				} `json:"rpms"`
+				WithNvr string `json:"with_nvr"`
+			} `json:"comparison"`
+			ContentAdvisoryIds    []string  `json:"content_advisory_ids"`
+			ImageAdvisoryID       string    `json:"image_advisory_id"`
+			ManifestListDigest    string    `json:"manifest_list_digest"`
+			ManifestSchema2Digest string    `json:"manifest_schema2_digest"`
+			Published             bool      `json:"published"`
+			PublishedDate         time.Time `json:"published_date"`
+			PushDate              time.Time `json:"push_date"`
+			Registry              string    `json:"registry"`
+			Repository            string    `json:"repository"`
+			Signatures            []struct {
+				KeyLongID string   `json:"key_long_id"`
+				Tags      []string `json:"tags"`
+			} `json:"signatures"`
+			Tags []struct {
+				Links struct {
+					TagHistory struct {
+						Href string `json:"href"`
+					} `json:"tag_history"`
+				} `json:"_links"`
+				AddedDate time.Time `json:"added_date"`
+				Name      string    `json:"name"`
+			} `json:"tags"`
+		} `json:"repositories"`
+		SumLayerSizeBytes      int64  `json:"sum_layer_size_bytes"`
+		TopLayerID             string `json:"top_layer_id"`
+		UncompressedTopLayerID string `json:"uncompressed_top_layer_id"`
+	} `json:"data"`
+	Page     int `json:"page"`
+	PageSize int `json:"page_size"`
+	Total    int `json:"total"`
+}
+
 type RegistryAPIResponse struct {
 	ID    string `json:"_id"`
 	Links struct {
 		CertificationProject struct {
-			Href string `json:"href"`
+			Href string `json:"href,omitempty"`
 		} `json:"certification_project"`
 		Images struct {
-			Href string `json:"href"`
+			Href string `json:"href,omitempty"`
 		} `json:"images"`
 		OperatorBundles struct {
-			Href string `json:"href"`
+			Href string `json:"href,omitempty"`
 		} `json:"operator_bundles"`
 		ProductListings struct {
-			Href string `json:"href"`
+			Href string `json:"href,omitempty"`
 		} `json:"product_listings"`
 		Vendor struct {
-			Href string `json:"href"`
+			Href string `json:"href,omitempty"`
 		} `json:"vendor"`
-	} `json:"_links"`
-	ApplicationCategories    []string `json:"application_categories"`
-	AutoRebuildTags          []string `json:"auto_rebuild_tags"`
-	BuildCategories          []string `json:"build_categories"`
-	CanAutoReleaseCveRebuild bool     `json:"can_auto_release_cve_rebuild"`
+	} `json:"_links,omitempty"`
+	ApplicationCategories    []string `json:"application_categories,omitempty"`
+	AutoRebuildTags          []string `json:"auto_rebuild_tags,omitempty"`
+	BuildCategories          []string `json:"build_categories,omitempty"`
+	CanAutoReleaseCveRebuild bool     `json:"can_auto_release_cve_rebuild,omitempty"`
 	ContentStreamGrades      []struct {
-		Grade    string `json:"grade"`
+		Grade    string `json:"grade,omitempty"`
 		ImageIds []struct {
-			Arch string `json:"arch"`
-			ID   string `json:"id"`
-		} `json:"image_ids"`
-		Tag string `json:"tag"`
-	} `json:"content_stream_grades"`
-	ContentStreamTags []string  `json:"content_stream_tags"`
-	CreationDate      time.Time `json:"creation_date"`
+			Arch string `json:"arch,omitempty"`
+			ID   string `json:"id,omitempty"`
+		} `json:"image_ids,omitempty"`
+		Tag string `json:"tag,omitempty"`
+	} `json:"content_stream_grades,omitempty"`
+	ContentStreamTags []string  `json:"content_stream_tags,omitempty"`
+	CreationDate      time.Time `json:"creation_date,omitempty"`
 	Description       string    `json:"description"`
 	DisplayData       struct {
-		LongDescription         string `json:"long_description"`
-		LongDescriptionMarkdown string `json:"long_description_markdown"`
-		Name                    string `json:"name"`
-		OpenshiftTags           string `json:"openshift_tags"`
-		ShortDescription        string `json:"short_description"`
-	} `json:"display_data"`
+		LongDescription         string `json:"long_description,omitempty"`
+		LongDescriptionMarkdown string `json:"long_description_markdown,omitempty"`
+		Name                    string `json:"name,omitempty"`
+		OpenshiftTags           string `json:"openshift_tags,omitempty"`
+		ShortDescription        string `json:"short_description,omitempty"`
+	} `json:"display_data,omitempty"`
 	DocumentationLinks              []any     `json:"documentation_links"`
-	EolDate                         time.Time `json:"eol_date"`
+	Deprecated                      bool      `json:"deprecated,omitempty"`
+	EolDate                         time.Time `json:"eol_date,omitempty"`
 	FbcOptIn                        bool      `json:"fbc_opt_in"`
 	FreshnessGradesUnknownUntilDate any       `json:"freshness_grades_unknown_until_date"`
 	IncludesMultipleContentStreams  bool      `json:"includes_multiple_content_streams"`
-	LastUpdateDate                  time.Time `json:"last_update_date"`
+	LastUpdateDate                  time.Time `json:"last_update_date,omitempty"`
 	MetadataSource                  string    `json:"metadata_source"`
-	Namespace                       string    `json:"namespace"`
-	NonProductionOnly               bool      `json:"non_production_only"`
-	ObjectType                      string    `json:"object_type"`
-	PrivilegedImagesAllowed         bool      `json:"privileged_images_allowed"`
-	ProductID                       any       `json:"product_id"`
-	ProductListings                 []string  `json:"product_listings"`
-	ProtectedForPull                bool      `json:"protected_for_pull"`
-	ProtectedForSearch              bool      `json:"protected_for_search"`
-	Published                       bool      `json:"published"`
-	Registry                        string    `json:"registry"`
-	RegistryTarget                  string    `json:"registry_target"`
-	ReleaseCategories               []string  `json:"release_categories"`
-	Repository                      string    `json:"repository"`
-	RequiresTerms                   bool      `json:"requires_terms"`
-	TotalSizeBytes                  int       `json:"total_size_bytes"`
-	TotalUncompressedSizeBytes      int64     `json:"total_uncompressed_size_bytes"`
-	UseLatest                       bool      `json:"use_latest"`
-	VendorLabel                     string    `json:"vendor_label"`
+	Metrics                         struct {
+		LastUpdateDate time.Time `json:"last_update_date,omitempty"`
+		PullCount      int       `json:"pulls_in_last_30_days,omitempty"`
+	} `json:"metrics,omitempty"`
+	Namespace                  string   `json:"namespace"`
+	NonProductionOnly          bool     `json:"non_production_only"`
+	ObjectType                 string   `json:"object_type"`
+	PrivilegedImagesAllowed    bool     `json:"privileged_images_allowed"`
+	ProductID                  any      `json:"product_id"`
+	ProductListings            []string `json:"product_listings"`
+	ProtectedForPull           bool     `json:"protected_for_pull"`
+	ProtectedForSearch         bool     `json:"protected_for_search"`
+	Published                  bool     `json:"published"`
+	Registry                   string   `json:"registry"`
+	RegistryTarget             string   `json:"registry_target"`
+	ReplacedByRepository       string   `json:"replaced_by_repository_name,omitempty"`
+	ReleaseCategories          []string `json:"release_categories"`
+	Repository                 string   `json:"repository"`
+	RequiresTerms              bool     `json:"requires_terms,omitempty"`
+	SupportLevels              []string `json:"support_levels,omitempty"`
+	TotalSizeBytes             int      `json:"total_size_bytes,omitempty"`
+	TotalUncompressedSizeBytes int64    `json:"total_uncompressed_size_bytes,omitempty"`
+	UseLatest                  bool     `json:"use_latest"`
+	VendorLabel                string   `json:"vendor_label"`
 }
 
 const (
 	timeout                    = 1 * time.Second
 	apiVersion                 = "externaldata.gatekeeper.sh/v1beta1"
 	applicationName            = "rh-registry-gatekeeper-provider"
-	constRegistryURL           = "https://catalog.redhat.com/api/containers/v1/repositories/registry/registry.access.redhat.com/repository/jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7"
+	constRegistryURL           = "https://catalog.redhat.com/api/containers/v1"
 	constRegistrymethod        = "GET"
 	constEOLDateValidCheck     = "true"
 	constEOLDateValidityPeriod = "525600"
@@ -119,6 +287,12 @@ const (
 )
 
 var (
+	//Valid Registries
+	validRegistries = []string{"registry.access.redhat.com", "registry.redhat.io"}
+
+	//global context
+	logger *slog.Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
 	//Server Port
 	serverPort string
 
@@ -156,8 +330,19 @@ var (
 func init() {
 	//Read env variables
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("No .env file found, Will use env variables")
+		logger.Info("No .env file found, Will use env variables")
 	}
+
+	//Set Context logging
+
+	// logger options- TODO Implement global logging level
+	//opts := slog.HandlerOptions{
+	//		AddSource: false,
+	//		Level:     slog.LevelDebug,
+	//	}
+
+	slog.SetDefault(logger)
+
 }
 
 func getEnvSetDefault(key, fallback string) string {
@@ -171,20 +356,21 @@ func main() {
 	//Parse Flags
 	flag.Parse()
 
-	//Initialize logger
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
-
 	//Set Local Variables
 	var err error
 	var shouldnoterror error
 
 	//Read env variables
 
-	httpsEnabled, err = strconv.ParseBool(getEnvSetDefault(("HTTPS_ENABLED"), https_enabled))
 	serverPort = getEnvSetDefault("SERVER_PORT", constServerPort)
 	registryAPIURL = getEnvSetDefault("REGISTRY_API_URL", constRegistryURL)
 	registryAPIMethod = getEnvSetDefault("REGISTRY_API_METHOD", constRegistrymethod)
+
+	httpsEnabled, err = strconv.ParseBool(getEnvSetDefault(("HTTPS_ENABLED"), https_enabled))
+	if err != nil {
+		slog.Info("EOL_DATE_VALID_CHECK not set, defaulting to True")
+		eolDateValidCheck = true
+	}
 
 	eolDateValidCheck, err = strconv.ParseBool(getEnvSetDefault(("EOL_DATE_VALID_CHECK"), constEOLDateValidCheck))
 	if err != nil {
@@ -239,6 +425,7 @@ func main() {
 
 		mux := http.NewServeMux()
 		mux.HandleFunc("/validate", processTimeout(validate, timeout))
+		mux.HandleFunc("/mutatetagdigest", processTimeout(mutatetagdigest, timeout))
 
 		server := &http.Server{
 			Addr:              serverPort,
@@ -258,6 +445,7 @@ func main() {
 	} else {
 		logger.Info("HTTPS Disabled")
 		http.HandleFunc("/validate", validate)
+		http.HandleFunc("/mutatetagdigest", mutatetagdigest)
 		srv := &http.Server{
 			Addr:              serverPort,
 			ReadTimeout:       10 * time.Second,
@@ -279,9 +467,9 @@ func PrettyPrint(i interface{}) string {
 }
 
 func validate(w http.ResponseWriter, req *http.Request) {
-	// only accept POST requests
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+	var appendregistryAPIURL string
+
+	results := make([]externaldata.Item, 0)
 
 	//Allow only POST requests
 	if req.Method != http.MethodPost {
@@ -310,119 +498,302 @@ func validate(w http.ResponseWriter, req *http.Request) {
 
 	// iterate over all keys
 	for _, key := range providerRequest.Request.Keys {
-		fmt.Println("verify signature for:", key)
+		logger.Info(fmt.Sprintf("Validating Image: %s", key))
+		var parsedRegistryResponse RegistryAPIResponse
+		//var parsedImageResponse ImageAPIResponse
+		apiqueryStrings := make(map[string]string)
+		apirequestHeaders := make(map[string]string)
+
+		//Parse Image Name
 		ref, err := name.ParseReference(key)
 		if err != nil {
 			sendResponse(nil, fmt.Sprintf("ERROR (ParseReference(%q)): %v", key, err), w)
 			return
 		}
 
-		fmt.Println("ref:", ref)
-		fmt.Println(ref.Context().RepositoryStr())
-		fmt.Println(ref.Identifier())
+		//Supported Registry Check
+		if validRegistriesCheck(ref.String()) {
+			sendResponse(nil, fmt.Sprintf("ERROR: Registry %s is not supported by this Provider", ref.String()), w)
+			return
+		}
+
+		//Set API Header
+		apirequestHeaders["accept"] = "application/json"
+
+		//Determine which API to call first depending on
+		if strings.Contains(ref.Identifier(), "sha256") {
+			appendregistryAPIURL = fmt.Sprintf("%s/repositories/registry/registry.access.redhat.com/repository/%s/images", registryAPIURL, ref.Context().RepositoryStr())
+			apiqueryStrings["filter"] = fmt.Sprintf("repositories.published==true;repositories.manifest_list_digest==%s", ref.Identifier())
+			apiqueryStrings["sort_by"] = "last_update_date[desc]"
+			apiqueryStrings["page_size"] = "1"
+
+		} else {
+			appendregistryAPIURL = fmt.Sprintf("%s/repositories/registry/registry.access.redhat.com/repository/%s/tag/%s", registryAPIURL, ref.Context().RepositoryStr(), ref.Identifier())
+		}
+
+		//Make request to RH registry API
+		apiresponse, err := callAPI(registryAPIMethod, appendregistryAPIURL, apirequestHeaders, apiqueryStrings)
+		if err != nil {
+			sendResponse(nil, fmt.Sprintf("%s", err), w)
+			defer apiresponse.Body.Close()
+			return
+		}
+
+		//Read response body
+		apiresponseBody, err := io.ReadAll(apiresponse.Body)
+		if err != nil {
+			errorString := fmt.Sprintf("client: could not read response body: %s\n", err)
+			sendResponse(nil, errorString, w)
+			defer apiresponse.Body.Close()
+			return
+		}
+
+		//Parse response body
+		parsedImageResponse, err := parseImageResponse(apiresponseBody)
+		if err != nil {
+			errorString := fmt.Sprintf("client: could not parse response body: %s\n", err)
+			sendResponse(nil, errorString, w)
+			defer apiresponse.Body.Close()
+			return
+		}
+
+		if eolDateValidCheck || deprecatedValidCheck {
+			//Make request to RH registry API
+			apiresponse, err = callAPI(registryAPIMethod, fmt.Sprintf("%s/repositories/registry/registry.access.redhat.com/repository/%s", registryAPIURL, ref.Context().RepositoryStr()), nil, nil)
+			if err != nil {
+				errorString := fmt.Sprintf("client: could not read response body: %s\n", err)
+				sendResponse(nil, errorString, w)
+				defer apiresponse.Body.Close()
+				return
+			}
+
+			//Read response body
+			apiresponseBody, err := io.ReadAll(apiresponse.Body)
+			if err != nil {
+				errorString := fmt.Sprintf("client: could not read response body: %s\n", err)
+				sendResponse(nil, errorString, w)
+				defer apiresponse.Body.Close()
+				return
+			}
+
+			//Parse Registry response body
+			parsedRegistryResponse, err = parseRegistryResponse(apiresponseBody)
+			if err != nil {
+				errorString := fmt.Sprintf("client: could not parse response body: %s\n", err)
+				sendResponse(nil, errorString, w)
+				defer apiresponse.Body.Close()
+				return
+			}
+
+			//Check if Image is EOL
+			if eolDateValidCheck {
+				checkresponse := repoisEOLCheck(parsedRegistryResponse)
+				for k, v := range checkresponse {
+					results = append(results, externaldata.Item{
+						Key:   k,
+						Value: v,
+					})
+				}
+			}
+
+			//Check if Image is Deprecated
+			if deprecatedValidCheck {
+				checkresponse := repoisDeprecatedCheck(parsedRegistryResponse)
+				for k, v := range checkresponse {
+					results = append(results, externaldata.Item{
+						Key:   k,
+						Value: v,
+					})
+				}
+			}
+		}
+
+		//Check if HealthGrade is Good
+		if healthgradeValidCheck {
+			checkresponse := imageHealthGradeCheck(parsedImageResponse)
+			for k, v := range checkresponse {
+				results = append(results, externaldata.Item{
+					Key:   k,
+					Value: v,
+				})
+			}
+		}
 
 	}
-	// Create request to RH registry API
-	apirequest, err := http.NewRequest(registryAPIMethod, registryAPIURL, nil)
-	if err != nil {
-		errorString := fmt.Sprintf("client: could not create request: %s\n", err)
-		logger.Error(errorString)
-		sendResponse(nil, errorString, w)
-		return
-	}
-
-	// Set headers
-	apirequest.Header.Set("accept", "application/json")
-
-	// Make request to RH registry API
-	apiresponse, err := http.DefaultClient.Do(apirequest)
-	if err != nil {
-		errorString := fmt.Sprintf("client: error making http request: %s\n", err)
-		logger.Error(errorString)
-		sendResponse(nil, errorString, w)
-		return
-	}
-
-	logger.Info("client: got response from RH Registry!\n")
-	if apiresponse.StatusCode != http.StatusOK {
-		errorString := fmt.Sprintf("client did not got valid status code: %d\n", apiresponse.StatusCode)
-		sendResponse(nil, errorString, w)
-		defer apiresponse.Body.Close()
-		return
-	}
-
-	apiresponseBody, err := io.ReadAll(apiresponse.Body)
-	if err != nil {
-		errorString := fmt.Sprintf("client: could not read response body: %s\n", err)
-		sendResponse(nil, errorString, w)
-		defer apiresponse.Body.Close()
-		return
-	}
-
-	fmt.Printf("client: response body: %s\n", apiresponseBody)
-	var parsedResponse RegistryAPIResponse
-	if err := json.Unmarshal(apiresponseBody, &parsedResponse); err != nil { // Parse []byte to go struct pointer
-		fmt.Println("Can not unmarshal JSON")
-		errorString := fmt.Sprintf("Can not unmarshal JSON Registry API Response JSON: %s\n", err)
-		sendResponse(nil, errorString, w)
-		return
-	}
-	fmt.Println(PrettyPrint(parsedResponse))
-
-	results := make([]externaldata.Item, 0)
-
-	checkresponse := activeValidChecks(parsedResponse)
-	for k, v := range checkresponse {
-		results = append(results, externaldata.Item{
-			Key:   k,
-			Value: v,
-		})
-	}
-
 	sendResponse(&results, "", w)
 }
 
-// activeValidChecks checks if the image is valid based on the checks enabled
-func activeValidChecks(parsedResponse RegistryAPIResponse) map[string]string {
+func validRegistriesCheck(registry string) bool {
+	return slices.Contains(validRegistries, registry)
+}
 
-	responseMap := make(map[string]string)
-
-	fmt.Println("registryAPIURL: ", registryAPIURL)
-	fmt.Println("eolDateValidityCheck: ", eolDateValidCheck)
-	fmt.Println("eolDateValidityPeriod: ", eolDateValidityPeriod)
-	fmt.Println("deperecatedValidCheck: ", deprecatedValidCheck)
-	fmt.Println("healthgradeValidCheck: ", healthgradeValidCheck)
-
-	//Check if Image is Deprecated
-	if deprecatedValidCheck {
-		if slices.Contains(parsedResponse.ReleaseCategories, "Deprecated") {
-			responseMap["Deprecated"] = "true"
-		}
+func callAPI(httprequestMethod string, apirequestURL string, apirequestHeaders map[string]string, apiqueryStrings map[string]string) (*http.Response, error) {
+	// Create request to API
+	apirequest, err := http.NewRequest(httprequestMethod, apirequestURL, nil)
+	if err != nil {
+		errorString := fmt.Sprintf("client: could not create request: %s\n", err)
+		logger.Debug(errorString)
+		return nil, err
 	}
 
-	//Check if Image is more than eolDateValidityPeriod old from EOL Data
-	if eolDateValidCheck {
+	// Set headers
+	for k, v := range apirequestHeaders { // Add all headers to request
+		apirequest.Header.Set(k, v)
+	}
+
+	// Set query strings
+	if len(apiqueryStrings) > 0 {
+		apiquery := apirequest.URL.Query()
+		for k, v := range apiqueryStrings { // Add all headers to request
+			apiquery.Add(k, v)
+		}
+		apirequest.URL.RawQuery = apiquery.Encode()
+	}
+
+	//Make request to RH registry API
+	apiresponse, err := http.DefaultClient.Do(apirequest)
+	if err != nil {
+		errorString := fmt.Sprintf("client: error making http request: %s\n", err)
+		logger.Debug(errorString)
+		return nil, err
+	}
+
+	//Check if we got a valid status code
+	logger.Debug("client: got a response from RH Registry!\n")
+	if apiresponse.StatusCode != http.StatusOK {
+		errorString := fmt.Sprintf("client did not got valid status code: %d\n", apiresponse.StatusCode)
+		logger.Debug(errorString)
+		return nil, errors.New(errorString)
+	}
+
+	return apiresponse, nil
+}
+
+func mutatetagdigest(w http.ResponseWriter, req *http.Request) {
+	results := make([]externaldata.Item, 0)
+
+	//Allow only POST requests
+	if req.Method != http.MethodPost {
+		sendResponse(nil, "only POST is allowed", w)
+		return
+	}
+
+	// read request body from Gatekeeper
+	gkprequestBody, err := io.ReadAll(req.Body)
+	if err != nil {
+		errorString := fmt.Sprintf("client: could not read request from gatekeeper: %v\n", err)
+		logger.Error(errorString)
+		sendResponse(nil, errorString, w)
+		return
+	}
+
+	// parse request body from Gatekeeper
+	var providerRequest externaldata.ProviderRequest
+	err = json.Unmarshal(gkprequestBody, &providerRequest)
+	if err != nil {
+		errorString := fmt.Sprintf("client: could not unmarshal request body from gatekeeper: %v\n", err)
+		logger.Error(errorString)
+		sendResponse(nil, errorString, w)
+		return
+	}
+
+	for _, key := range providerRequest.Request.Keys {
+		logger.Info(fmt.Sprintf("Request to Mutate Image:%s", key))
+
+		ref, err := name.ParseReference(key)
+		if err != nil {
+			sendResponse(nil, fmt.Sprintf("ERROR (ParseReference(%q)): %v", key, err), w)
+			return
+		}
+
+		//Parse Image Name
+		parsedSkopeoResponse, error := skopeoShellCommand(ref.String())
+		if error != nil {
+			sendResponse(nil, fmt.Sprintf("ERROR (ParseReference(%q)): %v", key, err), w)
+			return
+		}
+
+		results = append(results, externaldata.Item{
+			Key:   ref.String(),
+			Value: fmt.Sprintf("%s/%s@%s", ref.Context().RegistryStr(), ref.Context().RepositoryStr(), parsedSkopeoResponse.Digest),
+		})
+
+	}
+	sendResponse(&results, "", w)
+
+}
+
+// parseRegistryResponse parses the response from the RH Registry API when it returns a ContainerRegistryType
+func parseRegistryResponse(apiresponseBody []byte) (RegistryAPIResponse, error) {
+	var parsedResponse RegistryAPIResponse
+	if err := json.Unmarshal(apiresponseBody, &parsedResponse); err != nil { // Parse []byte to go struct pointer
+		logger.Error("Can not unmarshal JSON: %s", err)
+		return parsedResponse, err
+	}
+
+	return parsedResponse, nil
+}
+
+// parseImageResponse parses the response from the RH Registry API when it returns a ContainerImageType
+func parseImageResponse(apiresponseBody []byte) (ImageAPIResponse, error) {
+	var parsedResponse ImageAPIResponse
+	if err := json.Unmarshal(apiresponseBody, &parsedResponse); err != nil { // Parse []byte to go struct pointer
+		logger.Error("Can not unmarshal JSON: %s", err)
+		return parsedResponse, err
+	}
+
+	if parsedResponse.Total == 0 {
+		return parsedResponse, errors.New("got empty result from api")
+	}
+
+	return parsedResponse, nil
+}
+
+// repoisDeprecatedCheck checks if the Registry Deprecated Flag is Set
+func repoisDeprecatedCheck(parsedResponse RegistryAPIResponse) map[string]string {
+	responseMap := make(map[string]string)
+	if slices.Contains(parsedResponse.ReleaseCategories, "Deprecated") {
+		responseMap["Deprecated"] = "true"
+	} else {
+		responseMap["Deprecated"] = "false"
+	}
+	return responseMap
+}
+
+// repoisEOLCheck checks if the image is EOL based on the EOL Date
+func repoisEOLCheck(parsedResponse RegistryAPIResponse) map[string]string {
+	responseMap := make(map[string]string)
+
+	if !parsedResponse.EolDate.IsZero() {
 		if time.Since(parsedResponse.EolDate).Minutes() > eolDateValidityPeriod {
 			responseMap["EOLDate"] = "true"
 			responseMap["EOLDateValue"] = parsedResponse.EolDate.String()
+		} else {
+			responseMap["EOLDate"] = "false"
 		}
+	} else {
+		responseMap["EOLDate"] = "false"
 	}
 
-	//Check Image Health Check Grade from API
-	if healthgradeValidCheck {
-		failedhealthgrade := true
-		imagehealthgrade := parsedResponse.ContentStreamGrades[0].Grade
-		for i := 0; i < len(allowedHealthGrades); i++ {
-			if imagehealthgrade == allowedHealthGrades[i] {
-				failedhealthgrade = false
-			}
-		}
-		if failedhealthgrade {
-			responseMap["HealthGrade"] = "true"
-			responseMap["HealthGradeValue"] = imagehealthgrade
+	return responseMap
+}
+
+// imageHealthGradeCheck checks if the image health grade is allowed
+func imageHealthGradeCheck(parsedResponse ImageAPIResponse) map[string]string {
+	responseMap := make(map[string]string)
+	failedhealthgrade := true
+	imagehealthgrade := parsedResponse.Data[0].FreshnessGrades[0].Grade
+	for i := 0; i < len(allowedHealthGrades); i++ {
+		if imagehealthgrade == allowedHealthGrades[i] {
+			failedhealthgrade = false
 		}
 	}
-
+	if failedhealthgrade {
+		responseMap["HealthGrade"] = "true"
+		responseMap["HealthGradeValue"] = imagehealthgrade
+	} else {
+		responseMap["HealthGrade"] = "false"
+	}
 	return responseMap
 }
 
@@ -464,4 +835,26 @@ func processTimeout(h http.HandlerFunc, duration time.Duration) http.HandlerFunc
 		case <-processDone:
 		}
 	}
+}
+
+func skopeoShellCommand(image string) (SkopeoResponse, error) {
+	var outbuf, errbuf strings.Builder
+	var parsedResponse SkopeoResponse
+
+	cmd := exec.Command("skopeo", "inspect", fmt.Sprintf("docker://%s", image))
+	cmd.Stdout = &outbuf
+	cmd.Stderr = &errbuf
+	err := cmd.Run()
+	if err != nil {
+		logger.Error("Error running skopeo command: %s", err)
+		return parsedResponse, err
+	}
+
+	if err := json.Unmarshal([]byte(outbuf.String()), &parsedResponse); err != nil { // Parse []byte to go struct pointer
+		logger.Error("Can not unmarshal JSON: %s", err)
+		return parsedResponse, err
+	}
+
+	return parsedResponse, err
+
 }

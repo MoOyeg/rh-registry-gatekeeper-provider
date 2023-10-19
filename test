@@ -1,1 +1,0 @@
- curl -k -X POST https://localhost:8090/validate -H 'Content-Type: application/json' -d "{\"apiVersion\":\"externaldata.gatekeeper.sh/v1beta1\",\"kind\":\"ProviderRequest\",\"request\":{\"keys\":[\"error_test/image:latest\"]}}"
