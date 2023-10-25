@@ -20,6 +20,7 @@ As mentioned above the [OCP Gatekeeper operator](https://github.com/stolostron/g
 
 - To create operator using my edited image
  ```bash
+ oc adm new-project openshift-gatekeeper-system
  oc create -f ./operator/
  ```
 
