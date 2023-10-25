@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: default
+  name: deprecated-image2
+spec:
+  selector:
+    matchLabels:
+      app: depr-image
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: depr-image
+    spec:
+      containers:
+        - name: container2
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+               - "ALL"
+            allowPrivilegeEscalation: false
+          image: >-
+            registry.redhat.io/ubi8/ubi:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+        - name: container
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+               - "ALL"
+            allowPrivilegeEscalation: false
+          image: >-
+            registry.redhat.io/jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%

@@ -1,0 +1,63 @@
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: k8sexternaldataregistry
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sExternalDataRegistry
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sexternaldata
+
+        images := [img | img = input.review.object.spec.template.spec.containers[_].image]
+
+        # send external data request
+        response := external_data({"provider": "rh-registry-gatekeeper-provider-validate", "keys": images})
+
+        violation[{"msg": msg}] {
+          #Check For Deprecation
+          not response_unsupported_registry(response)
+          some i
+          imgresponse = response.responses[i]
+          imgresponse[j][k].key == "Deprecated"
+          imgresponse[j][k].value == "true"
+          imgname := imgresponse[0]
+
+          msg := sprintf("Image %s is Deprecated", [imgname])
+        }  
+
+        violation[{"msg": msg}] {
+          #Check For Image EOL
+          not response_unsupported_registry(response)
+          some i
+          imgresponse = response.responses[i]
+          imgresponse[j][k].key == "EOLDate"
+          imgresponse[j][k].value == "true"
+          "EOLDateValue" == imgresponse[j][m].key
+          imgname := imgresponse[0]
+          eoldatevalue := imgresponse[j][m].value
+
+          msg := sprintf("Image %s went EOL on %s", [imgname, eoldatevalue])
+        }
+
+        violation[{"msg": msg}] {
+          #Check For Image Health Grade
+          not response_unsupported_registry(response)
+          some i
+          imgresponse = response.responses[i]
+          imgresponse[j][k].key == "HealthGrade"
+          imgresponse[j][k].value == "true"
+          "HealthGradeValue" == imgresponse[j][m].key
+          imgname := imgresponse[0]
+          healthgradevalue := imgresponse[j][m].value
+
+          msg := sprintf("Image %s does not have a good health grade, Health Grade is %s", [imgname, healthgradevalue])
+        }   
+
+        response_unsupported_registry(response) {
+        count(response.errors) > 0
+        contains(response.errors[0],"is not supported by this Provider")
+        }

@@ -1,0 +1,8 @@
+apiVersion: externaldata.gatekeeper.sh/v1beta1
+kind: Provider
+metadata:
+  name: rh-registry-gatekeeper-provider-validate
+spec:
+  url: https://rhreg-gkp-pro.openshift-gatekeeper-system.svc.cluster.local:8090/validate
+  caBundle: ${SERVICE_CA_BUNDLE}
+  timeout: 30

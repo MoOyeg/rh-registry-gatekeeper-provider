@@ -1,0 +1,4 @@
+{"errors": [""], "responses": [["registry.redhat.io/ubi8/ubi:latest", [{"key": "EOLDate", "value": "false"}, {"key": "Deprecated", "value": "false"}, {"key": "HealthGrade", "value": "false"}]], ["registry.redhat.io/jboss-webserver-5/webserver54-openjdk8-tomcat9-openshift-rhel7:latest", [{"key": "EOLDate", "value": "true"}, {"key": "EOLDateValue", "value": "2021-06-28 21:00:00 +0000 UTC"}, {"key": "Deprecated", "value": "true"}, {"key": "HealthGrade", "value": "true"}, {"key": "HealthGradeValue", "value": "D"}]]], "status_code": 200, "system_error": ""}
+
+
+{"errors": [""], "responses": [["registry.redhat.io/ubi8/ubi:latest", [{"key": "EOLDate", "value": "false"}, {"key": "Deprecated", "value": "false"}, {"key": "HealthGrade", "value": "false"}]]], "status_code": 200, "system_error": ""}

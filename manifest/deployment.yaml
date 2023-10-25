@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhreg-gkp-pro
+  namespace: openshift-gatekeeper-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: rhreg-gkp-pro
+  template:
+    metadata:
+      labels:
+        run: rhreg-gkp-pro
+    spec:
+      volumes:
+        - name: volume-provider-certs
+          secret:
+            secretName: rhreg-gkp-pro-tls
+            defaultMode: 420
+        - name: volume-gatekeeper-certs
+          secret:
+            secretName: gatekeeper-webhook-server-cert
+            defaultMode: 420
+      containers:
+      - image: quay.io/mooyeg/rh-registry-gatekeeper-provider:latest
+        imagePullPolicy: Always
+        name: rh-registry-gatekeeper-provider
+        volumeMounts:
+          - name: volume-gatekeeper-certs
+            mountPath: /gatekeeper-ca
+          - name: volume-provider-certs
+            mountPath: /provider-certs
+        ports:
+        - containerPort: 8090
+          protocol: TCP
+      restartPolicy: Always
+      nodeSelector:
+        kubernetes.io/os: linux

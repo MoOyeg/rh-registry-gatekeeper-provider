@@ -1,0 +1,20 @@
+apiVersion: mutations.gatekeeper.sh/v1beta1
+kind: Assign
+metadata:
+  name: mutate-images
+spec:
+  applyTo:
+  - groups: ["apps"]
+    kinds: ["Deployment"]
+    versions: ["v1"]
+  match:
+    scope: Namespaced
+    namespaces:
+    - default
+  location: "spec.template.spec.containers[name:*].image"
+  parameters:
+    assign:
+      externalData:
+        provider: registry-gatekeeper-provider-mutate
+        dataSource: ValueAtLocation
+        failurePolicy: Fail
