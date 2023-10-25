@@ -1,0 +1,31 @@
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: gatekeeper-operator
+  namespace: openshift-gatekeeper-system
+spec:
+  grpcPodConfig:
+    nodeSelector:
+      kubernetes.io/os: linux
+  displayName: Gatekeeper Operator Upstream
+  image: quay.io/mooyeg/gatekeeper-operator-bundle-index:v3.11.1
+  publisher: github.com/gatekeeper/gatekeeper-operator
+  sourceType: grpc
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: gatekeeper-operator
+  namespace: openshift-gatekeeper-system
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: gatekeeper-operator-sub
+  namespace: openshift-gatekeeper-system
+spec:
+  name: gatekeeper-operator
+  channel: stable
+  source: gatekeeper-operator
+  sourceNamespace: openshift-gatekeeper-system

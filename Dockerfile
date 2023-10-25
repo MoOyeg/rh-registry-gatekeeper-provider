@@ -1,6 +1,5 @@
 ARG BUILDPLATFORM="linux/amd64"
 ARG BUILDERIMAGE="golang:1.21-bullseye"
-#ARG BASEIMAGE="gcr.io/distroless/static:nonroot"
 ARG BASEIMAGE="golang:1.21-bullseye"
 
 FROM --platform=$BUILDPLATFORM $BUILDERIMAGE as builder
@@ -21,7 +20,7 @@ WORKDIR /go/src/github.com/MoOyeg/rh-registry-gatekeeper-provider
 
 COPY . .
 
-RUN go mod tidy && go build -o provider provider.go && rm .env
+RUN go mod tidy && go build -o provider provider.go && rm .env  && rm -rf temp 
 
 FROM $BASEIMAGE
 
@@ -29,7 +28,8 @@ WORKDIR /
 
 COPY --from=builder /go/src/github.com/MoOyeg/rh-registry-gatekeeper-provider .
 
-RUN chgrp -R 0 /provider \
+RUN apt-get update -y && apt-get install -y skopeo \
+  && chgrp -R 0 /provider \
   && chmod -R g+rwx /provider
 
 USER 1001

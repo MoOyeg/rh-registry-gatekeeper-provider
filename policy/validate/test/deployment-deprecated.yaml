@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: default
-  name: deprecated-image
+  name: deprecated-image2
 spec:
   selector:
     matchLabels:
@@ -14,6 +14,20 @@ spec:
         app: depr-image
     spec:
       containers:
+        - name: container2
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+               - "ALL"
+            allowPrivilegeEscalation: false
+          image: >-
+            registry.redhat.io/ubi8/ubi:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
         - name: container
           securityContext:
             runAsNonRoot: true

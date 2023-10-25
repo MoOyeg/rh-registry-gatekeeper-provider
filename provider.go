@@ -10,6 +10,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//TODO: Need to Add Caching for External API Calls
+
 package main
 
 import (
@@ -270,7 +272,8 @@ type RegistryAPIResponse struct {
 }
 
 const (
-	timeout                    = 1 * time.Second
+	readTimeout                = 10 * time.Second
+	writeTimeout               = 10 * time.Second
 	apiVersion                 = "externaldata.gatekeeper.sh/v1beta1"
 	applicationName            = "rh-registry-gatekeeper-provider"
 	constRegistryURL           = "https://catalog.redhat.com/api/containers/v1"
@@ -420,17 +423,26 @@ func main() {
 			panic(err)
 		}
 
+		// create a cert pool and add cert to it
 		clientCAs := x509.NewCertPool()
 		clientCAs.AppendCertsFromPEM(caCert)
 
+		//Add Cert to System Pool
+		systemclientCA, err := x509.SystemCertPool()
+		if err != nil {
+			logger.Error("Error adding Gatekeeper CA to System Cert Pool: %s", err)
+		} else {
+			systemclientCA.AppendCertsFromPEM(caCert)
+		}
+
 		mux := http.NewServeMux()
-		mux.HandleFunc("/validate", processTimeout(validate, timeout))
-		mux.HandleFunc("/mutatetagdigest", processTimeout(mutatetagdigest, timeout))
+		mux.HandleFunc("/validate", processTimeout(validate, readTimeout))
+		mux.HandleFunc("/mutatetagdigest", processTimeout(mutatetagdigest, readTimeout))
 
 		server := &http.Server{
 			Addr:              serverPort,
 			Handler:           mux,
-			ReadHeaderTimeout: timeout,
+			ReadHeaderTimeout: readTimeout,
 			TLSConfig: &tls.Config{
 				ClientAuth: tls.RequireAndVerifyClientCert,
 				ClientCAs:  clientCAs,
@@ -448,9 +460,9 @@ func main() {
 		http.HandleFunc("/mutatetagdigest", mutatetagdigest)
 		srv := &http.Server{
 			Addr:              serverPort,
-			ReadTimeout:       10 * time.Second,
-			WriteTimeout:      10 * time.Second,
-			ReadHeaderTimeout: timeout,
+			ReadTimeout:       readTimeout,
+			WriteTimeout:      writeTimeout,
+			ReadHeaderTimeout: readTimeout,
 		}
 
 		if err := srv.ListenAndServe(); err != nil {
@@ -497,9 +509,11 @@ func validate(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// iterate over all keys
-	for _, key := range providerRequest.Request.Keys {
+	for idx, key := range providerRequest.Request.Keys {
+		fmt.Println(idx, key)
 		logger.Info(fmt.Sprintf("Validating Image: %s", key))
 		var parsedRegistryResponse RegistryAPIResponse
+		nestedresults := make([]externaldata.Item, 0)
 		//var parsedImageResponse ImageAPIResponse
 		apiqueryStrings := make(map[string]string)
 		apirequestHeaders := make(map[string]string)
@@ -512,7 +526,7 @@ func validate(w http.ResponseWriter, req *http.Request) {
 		}
 
 		//Supported Registry Check
-		if validRegistriesCheck(ref.String()) {
+		if !(validRegistriesCheck(ref.String())) {
 			sendResponse(nil, fmt.Sprintf("ERROR: Registry %s is not supported by this Provider", ref.String()), w)
 			return
 		}
@@ -589,7 +603,7 @@ func validate(w http.ResponseWriter, req *http.Request) {
 			if eolDateValidCheck {
 				checkresponse := repoisEOLCheck(parsedRegistryResponse)
 				for k, v := range checkresponse {
-					results = append(results, externaldata.Item{
+					nestedresults = append(nestedresults, externaldata.Item{
 						Key:   k,
 						Value: v,
 					})
@@ -600,7 +614,7 @@ func validate(w http.ResponseWriter, req *http.Request) {
 			if deprecatedValidCheck {
 				checkresponse := repoisDeprecatedCheck(parsedRegistryResponse)
 				for k, v := range checkresponse {
-					results = append(results, externaldata.Item{
+					nestedresults = append(nestedresults, externaldata.Item{
 						Key:   k,
 						Value: v,
 					})
@@ -612,12 +626,17 @@ func validate(w http.ResponseWriter, req *http.Request) {
 		if healthgradeValidCheck {
 			checkresponse := imageHealthGradeCheck(parsedImageResponse)
 			for k, v := range checkresponse {
-				results = append(results, externaldata.Item{
+
+				nestedresults = append(nestedresults, externaldata.Item{
 					Key:   k,
 					Value: v,
 				})
 			}
 		}
+		results = append(results, externaldata.Item{
+			Key:   key,
+			Value: nestedresults,
+		})
 
 	}
 	sendResponse(&results, "", w)
@@ -698,7 +717,7 @@ func mutatetagdigest(w http.ResponseWriter, req *http.Request) {
 	}
 
 	for _, key := range providerRequest.Request.Keys {
-		logger.Info(fmt.Sprintf("Request to Mutate Image:%s", key))
+		logger.Info(fmt.Sprintf("Recieved Request to Mutate Image:%s", key))
 
 		ref, err := name.ParseReference(key)
 		if err != nil {
@@ -712,14 +731,13 @@ func mutatetagdigest(w http.ResponseWriter, req *http.Request) {
 			sendResponse(nil, fmt.Sprintf("ERROR (ParseReference(%q)): %v", key, err), w)
 			return
 		}
-
 		results = append(results, externaldata.Item{
 			Key:   ref.String(),
 			Value: fmt.Sprintf("%s/%s@%s", ref.Context().RegistryStr(), ref.Context().RepositoryStr(), parsedSkopeoResponse.Digest),
 		})
 
 	}
-	sendResponse(&results, "", w)
+	sendResponse(&results, "Enable Indempotent Flag", w)
 
 }
 
@@ -806,10 +824,17 @@ func sendResponse(results *[]externaldata.Item, systemErr string, w http.Respons
 
 	if results != nil {
 		response.Response.Items = *results
+		//TODO: Should add another Function Paramater but dont want to refactor at this time
+		if systemErr == "Enable Indempotent Flag" {
+			response.Response.Idempotent = true
+			response.Response.SystemError = ""
+		}
+
 	} else {
 		response.Response.SystemError = systemErr
 	}
 
+	logger.Info(fmt.Sprintf("Sending Response: %s", PrettyPrint(response)))
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		panic(err)

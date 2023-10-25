@@ -5,7 +5,6 @@ go 1.21.2
 require (
 	github.com/google/go-containerregistry v0.16.1
 	github.com/joho/godotenv v1.5.1
-	github.com/magefile/mage v1.15.0
 	github.com/open-policy-agent/frameworks/constraint v0.0.0-20230822235116-f0b62fe1e4c4
 	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63
 )

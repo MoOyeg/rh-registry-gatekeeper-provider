@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: default
+  name: not-depr
+spec:
+  selector:
+    matchLabels:
+      app: not-depr
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: not-depr
+    spec:
+      containers:
+        - name: container
+          image: quay.io/mooyeg/python3:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          command:
+            - /bin/bash
+          args:
+            - -c
+            - while :;do sleep infinity;done
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
