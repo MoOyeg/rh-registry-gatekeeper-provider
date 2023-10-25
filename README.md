@@ -82,7 +82,7 @@ With our provider installed we can try a few use cases
 
   - Provider/Template were written in way to still work if image is not from RH registry. So creating below deployment should work fine.
     ```bash
-    oc create -f /policy/validate/test/deployment-not-rh-registry.yaml
+    oc create -f ./policy/validate/test/deployment-not-rh-registry.yaml
     ```
 
 2 Mutating tag to digest's. As an example our Provider also embeds the skopeo command line and will use attempt to use that to obtain the digest.

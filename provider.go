@@ -526,7 +526,7 @@ func validate(w http.ResponseWriter, req *http.Request) {
 		}
 
 		//Supported Registry Check
-		if !(validRegistriesCheck(ref.String())) {
+		if !(validRegistriesCheck(ref.Context().RegistryStr())) {
 			sendResponse(nil, fmt.Sprintf("ERROR: Registry %s is not supported by this Provider", ref.String()), w)
 			return
 		}
