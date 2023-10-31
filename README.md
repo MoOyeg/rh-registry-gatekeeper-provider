@@ -89,6 +89,12 @@ With our provider installed we can try a few use cases
 
 2 Mutating tag to digest's. As an example our Provider also embeds the skopeo command line and will use attempt to use that to obtain the digest.
 
+  - Please delete the validation Policies first.
+    ```bash
+    oc delete -f ./policy/validate/constraint.yaml
+    oc delete -f ./policy/validate/template.yaml
+    ```
+
   - Create our Gatekeeper mutation template
   ```bash
   oc create -f ./policy/mutate/assign.yaml  
