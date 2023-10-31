@@ -57,6 +57,7 @@ spec:
           msg := sprintf("Image %s does not have a good health grade, Health Grade is %s", [imgname, healthgradevalue])
         }   
 
+        #Not violating on error response to allow for Fail-Open
         response_unsupported_registry(response) {
         count(response.errors) > 0
         contains(response.errors[0],"is not supported by this Provider")

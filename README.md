@@ -21,7 +21,8 @@ As mentioned above the [OCP Gatekeeper operator](https://github.com/stolostron/g
 - To create operator using my edited image
  ```bash
  oc adm new-project openshift-gatekeeper-system
- oc create -f ./operator/
+ oc create -f ./operator/install
+ oc create -f ./operator/gatekeeper
  ```
 
 ## Steps
@@ -75,10 +76,11 @@ With our provider installed we can try a few use cases
     ```bash
     oc create -f ./policy/validate/test/deployment-deprecated.yaml
     ```
+    UI Violation
+    ![Image is deprecated from UI](./images/gtk-ui-deny.png)
     
-    ![Image is deprecated from UI](./images/ui-Deprecated.png)
-    
-    ![Image is deprecated from CLI](./images/cli-deprecated.png)
+    CLI Violation
+    ![Image is deprecated from CLI](./images/gtk-cli-deny.png)
 
   - Provider/Template were written in way to still work if image is not from RH registry. So creating below deployment should work fine.
     ```bash
